@@ -30,10 +30,11 @@ OurColormap1Channel = NDArray[np.int32]
 
 class ColorCorrector:
 
-    def __init__(self):
-        pass
+    def __init__(self, *, debug : bool = False):
+        self.debug = debug
+        self.colormap : Optional[OurColormap] = None
 
-    def find_color_card(self, image : OurImageType, debug : bool=False) -> Optional[OurImageType]:
+    def find_color_card(self, image : OurImageType) -> Optional[OurImageType]:
         """Find a color card in an image. Return another image, with only the color card, with perspective fixed"""
         # load the ArUCo dictionary, grab the ArUCo parameters, and
         # detect the markers in the input image
@@ -41,7 +42,7 @@ class ColorCorrector:
         arucoParams = cv2.aruco.DetectorParameters()
         detector = cv2.aruco.ArucoDetector(arucoDict, arucoParams)
         (corners, ids, _) = detector.detectMarkers(image)
-        if debug:
+        if self.debug:
             outputImage = image.copy()
             cv2.aruco.drawDetectedMarkers(outputImage, corners, ids)
             winTitle = f"Markers."
@@ -139,14 +140,21 @@ class ColorCorrector:
                 prev_index = i
         return colormap_1channel
 
-    def create_colormap(self, source : OurImageType, template : OurImageType) -> OurColormap:
-        """Given a source image capture of a colorcard and a template for that colorcard return the colormap to correct the source image"""
+    def create_colormap(self, source : OurImageType, template : OurImageType) -> None:
+        """Given a source image capture of a colorcard and a template for that colorcard return the colormap to correct the source image."""
         rv : OurColormap = []
         assert source.shape[-1] == template.shape[-1]
         for channel in range(source.shape[-1]):
             map = self._create_colormap_1channel(source[..., channel], template[..., channel])
             rv.append(map)
-        return rv
+        self.colormap = rv
+
+    def load_colormap(self, filename : str) -> None:
+        assert False
+    
+    def save_colormap(self, filename : str) -> None:
+        assert not self.colormap is None
+        assert False
 
     def _map_image_color_1channel(self, full_1channel : OurImageType1Channel, colormap_1channel : OurColormap1Channel) -> OurImageType1Channel:
         """Helper function: map color for a single channel"""
@@ -158,32 +166,35 @@ class ColorCorrector:
                 ret2[i][j] = colormap_1channel[full_1channel[i][j]]
         return ret2
 
-    def map_image_color(self, fullImage : OurImageType, colormap : OurColormap) -> OurImageType:
-        """Given a source image and a colormap return a new image that has the colors mapped"""
-        assert len(colormap) == fullImage.shape[-1]
+    def map_image(self, fullImage : OurImageType) -> OurImageType:
+        """Given a source image return a new image that has the colors mapped"""
+        assert not self.colormap is None
+        assert len(self.colormap) == fullImage.shape[-1]
         matched = np.empty(fullImage.shape, dtype=fullImage.dtype)
-        for channel in range(len(colormap)):
-            matched_channel = self._map_image_color_1channel(fullImage[..., channel], colormap[channel])
+        for channel in range(len(self.colormap)):
+            matched_channel = self._map_image_color_1channel(fullImage[..., channel], self.colormap[channel])
             matched[..., channel] = matched_channel
         return matched
         
-    def process_images(self, inputCard : OurImageType, referenceCard : OurImageType, fullImage : OurImageType, debug : bool = False) -> OurImageType:
+    def full_process_images(self, inputCard : OurImageType, referenceCard : OurImageType, fullImage : OurImageType) -> OurImageType:
         """
-            Return modified full image, by using histogram equalizatin on input and
+            Return modified full image, by using histogram equalization on input and
             reference cards and applying that transformation on fullImage.
         """
-        colormap = self.create_colormap(inputCard, referenceCard)
-        rv = self.map_image_color(fullImage, colormap)
-        if debug:
-            self.plot_colormap(colormap)
+        self.create_colormap(inputCard, referenceCard)
+        rv = self.map_image(fullImage)
+        if self.debug:
+            self.plot_colormap()
         return rv
 
-    def plot_colormap(self, colormap : OurColormap) -> None:
-        ngraph = len(colormap)
+    def plot_colormap(self) -> None:
+        """Show a plot of the colormap as color curves"""
+        assert not self.colormap is None
+        ngraph = len(self.colormap)
         fig, axis = plt.subplots(nrows=1, ncols=1, sharex=True, sharey=True)
         colors = ['red', 'green', 'blue']
         for i in range(ngraph):
-            data = colormap[i]
+            data = self.colormap[i]
             axis.plot(data, color=colors[i], label=colors[i])
         axis.set_aspect(1)
         axis.set_xticks(np.arange(0, 257, 32))
@@ -211,7 +222,7 @@ def main():
     ap.add_argument("-d", "--debug", action="store_true", help="Debug card finder")
     args = vars(ap.parse_args())
 
-    corrector = ColorCorrector()
+    corrector = ColorCorrector(debug=args["debug"])
 
     # load the reference image and input images from disk
     print("[INFO] loading images...")
@@ -239,8 +250,8 @@ def main():
     # First try without resizing
     raw_ = raw
     img1_ = img1
-    rawCard = corrector.find_color_card(raw_, args["debug"])
-    imageCard = corrector.find_color_card(img1_, args["debug"])
+    rawCard = corrector.find_color_card(raw_)
+    imageCard = corrector.find_color_card(img1_)
     if not rawCard is None and not imageCard is None:
         goOn = True
 
@@ -251,8 +262,8 @@ def main():
 
     
         print("[INFO] Finding color matching cards width "+ repr(newWidth)+"px")
-        rawCard = corrector.find_color_card(raw_, args["debug"])
-        imageCard = corrector.find_color_card(img1_, args["debug"])
+        rawCard = corrector.find_color_card(raw_)
+        imageCard = corrector.find_color_card(img1_)
         
         if rawCard is None or imageCard is None:
             oldW =newWidth
@@ -287,7 +298,7 @@ def main():
             print('resize Final: '+repr(width))
             img1 = imutils.resize(img1, width)
 
-    result2 = corrector.process_images(imageCard, rawCard, img1, args["debug"])
+    result2 = corrector.full_process_images(imageCard, rawCard, img1)
 
 
 
