@@ -88,6 +88,41 @@ class ColorCorrector:
         # return the color matching card to the calling function
         return cast(OurImageType, card)
 
+    def find_raw_aruco(self, image : OurImageType) -> Optional[OurImageType]:
+        """Find an aruco marker in an image. Return another image, with only the aruco marker, with perspective fixed"""
+        # load the ArUCo dictionary, grab the ArUCo parameters, and
+        # detect the markers in the input image
+        arucoDict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_ARUCO_ORIGINAL)
+        arucoParams = cv2.aruco.DetectorParameters()
+        detector = cv2.aruco.ArucoDetector(arucoDict, arucoParams)
+        (corners, ids, _) = detector.detectMarkers(image)
+        if self.debug:
+            outputImage = image.copy()
+            cv2.aruco.drawDetectedMarkers(outputImage, corners, ids)
+            winTitle = f"Markers."
+            cv2.imshow(winTitle, outputImage)
+            while True:
+                ch = cv2.waitKey()
+                if ch == 27:
+                    break
+                print(f"ignoring key {ch}")
+            cv2.destroyWindow(winTitle)
+        # try to extract the coordinates of the color correction card
+        i = 0
+        topLeft = corners[i][0]
+        topRight = corners[i][1]
+        bottomRight = corners[i][2]
+        bottomLeft = corners[i][3]
+
+        # build our list of reference points and apply a perspective
+        # transform to obtain a top-down, bird’s-eye view of the color
+        # matching card
+        cardCoords = np.array([topLeft, topRight,
+                            bottomRight, bottomLeft])
+        card = four_point_transform(image, cardCoords)
+        # return the color matching card to the calling function
+        return cast(OurImageType, card)
+
 
     def _create_colormap_1channel(self, source : OurImageType1Channel, template : OurImageType1Channel) -> OurColormap1Channel:
         """
@@ -252,6 +287,7 @@ def main():
     ap.add_argument("-i", "--input", required=True,
                     help="path to the input image to apply color correction to")
     ap.add_argument("-d", "--debug", action="store_true", help="Debug card finder")
+    ap.add_argument("--raw_aruco", action="store_true", help="Don't search for a colorcard, search for a raw aruco marker")
     args = vars(ap.parse_args())
 
     corrector = ColorCorrector(debug=args["debug"])
@@ -286,8 +322,12 @@ def main():
         # First try without resizing
         raw_ = raw
         img1_ = img1
-        rawCard = corrector.find_color_card(raw_)
-        imageCard = corrector.find_color_card(img1_)
+        if args["raw_aruco"]:
+            rawCard = corrector.find_raw_aruco(raw_)
+            imageCard = corrector.find_raw_aruco(img1_)
+        else:
+            rawCard = corrector.find_color_card(raw_)
+            imageCard = corrector.find_color_card(img1_)
         if not rawCard is None and not imageCard is None:
             goOn = True
 
