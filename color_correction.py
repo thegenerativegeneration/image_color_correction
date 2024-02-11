@@ -150,11 +150,41 @@ class ColorCorrector:
         self.colormap = rv
 
     def load_colormap(self, filename : str) -> None:
-        assert False
-    
+        """Load a colormap from a .cube file"""
+        with open(filename) as fp:
+            line = fp.readline()
+            if line != 'LUT_1D_SIZE 256\n':
+                print(f"{filename}: header: only LUT_1d_SIZE 256 supported. Got {line}")
+                assert False
+            line = fp.readline()
+            if line != 'LUT_1D_INPUT_RANGE 0 255\n':
+                print(f"{filename}: header: only LUT_1D_INPUT_RANGE 0 255 supported. Got {line}")
+                assert False
+            colormap_r = np.ones(256, dtype=np.int32) * -1
+            colormap_g = np.ones(256, dtype=np.int32) * -1
+            colormap_b = np.ones(256, dtype=np.int32) * -1
+            for i in range(256):
+                line = fp.readline()
+                line = line.strip()
+                r, g, b = line.split()
+                colormap_r[i] = int(r)
+                colormap_g[i] = int(g)
+                colormap_b[i] = int(b)
+            self.colormap = [colormap_r, colormap_g, colormap_b]
+
     def save_colormap(self, filename : str) -> None:
+        """Save the colormap to a .cube file"""
         assert not self.colormap is None
-        assert False
+        # .cube file format gotten from https://resolve.cafe/developers/luts/
+        with open(filename, "w") as fp:
+            fp.write('LUT_1D_SIZE 256\n')
+            fp.write('LUT_1D_INPUT_RANGE 0 255\n')
+            for i in range(256):
+                r = self.colormap[0][i]
+                g = self.colormap[1][i]
+                b = self.colormap[2][i]
+                fp.write(f"{r} {g} {b}\n")
+
 
     def _map_image_color_1channel(self, full_1channel : OurImageType1Channel, colormap_1channel : OurColormap1Channel) -> OurImageType1Channel:
         """Helper function: map color for a single channel"""
@@ -209,14 +239,16 @@ class ColorCorrector:
 def main():
     # construct the argument parser and parse the arguments
     ap = argparse.ArgumentParser()
-    ap.add_argument("-r", "--reference", required=True,
+    ap.add_argument("-r", "--reference", required=False,
                     help="path to the input reference image")
+    ap.add_argument("--loadlut", metavar="FILE", help="Don't search for colorcards, load a .cube FILE for colormapping")
     ap.add_argument("-w", "--width0", required=False,
                     help="Image Size")
     ap.add_argument("-v", "--view", required=False, default=False, action='store_true',
                     help="Image Preview?")
     ap.add_argument("-o", "--output", required=False, default=False,
                     help="Image Output Path")
+    ap.add_argument("--savelut", metavar="FILE", help="Save the colormapping to FILE in .cube format")
     ap.add_argument("-i", "--input", required=True,
                     help="path to the input image to apply color correction to")
     ap.add_argument("-d", "--debug", action="store_true", help="Debug card finder")
@@ -224,93 +256,105 @@ def main():
 
     corrector = ColorCorrector(debug=args["debug"])
 
+    img1 : Optional[OurImageType] = None
     # load the reference image and input images from disk
-    print("[INFO] loading images...")
-    # raw = cv2.imread(args["reference"])
-    # img1 = cv2.imread(args["input"])
-    file_exists = pathfile.isfile(args["reference"])
 
-    if not file_exists:
-        print('[WARNING] Referenz File not exisits '+str(args["reference"]))
-        sys.exit()
+    if args["loadlut"]:
+        corrector.load_colormap(args["loadlut"])
+    else:
+        print("[INFO] loading images...")
 
+        img1 = cast(OurImageType, cv2.imread(args["input"]))
+        file_exists = pathfile.isfile(args["reference"])
 
-    raw = cast(OurImageType, cv2.imread(args["reference"]))
-    img1 = cast(OurImageType, cv2.imread(args["input"]))
-
-    height, width0, channels = raw.shape
-    height2, width1, channels = img1.shape
+        if not file_exists:
+            print('[WARNING] Referenz File not exisits '+str(args["reference"]))
+            sys.exit()
 
 
-    # resize the reference and input images
+        raw = cast(OurImageType, cv2.imread(args["reference"]))
 
-    newWidth=width0//3
-    countStep=400
-    goOn=False
-    # First try without resizing
-    raw_ = raw
-    img1_ = img1
-    rawCard = corrector.find_color_card(raw_)
-    imageCard = corrector.find_color_card(img1_)
-    if not rawCard is None and not imageCard is None:
-        goOn = True
+        height, width0, channels = raw.shape
+        height2, width1, channels = img1.shape
 
-    while goOn==False and newWidth<=width0:
 
-        raw_ = imutils.resize(raw, newWidth)
-        img1_ = imutils.resize(img1, newWidth)
+        # resize the reference and input images
 
-    
-        print("[INFO] Finding color matching cards width "+ repr(newWidth)+"px")
+        newWidth=width0//3
+        countStep=400
+        goOn=False
+        # First try without resizing
+        raw_ = raw
+        img1_ = img1
         rawCard = corrector.find_color_card(raw_)
         imageCard = corrector.find_color_card(img1_)
-        
-        if rawCard is None or imageCard is None:
-            oldW =newWidth
-            newWidth +=countStep
-            print("[INFO] Could not find color with width "+ repr(oldW)+"px. Try width:"+ repr(newWidth)+"px")
-            continue
-        else:
-            goOn=True
-            break
+        if not rawCard is None and not imageCard is None:
+            goOn = True
 
-    if(goOn is False):
-        print("[WARNING] Could not find color matching cards in both images. Try a highter/better Resolution")
+        while goOn==False and newWidth<=width0:
+
+            raw_ = imutils.resize(raw, newWidth)
+            img1_ = imutils.resize(img1, newWidth)
+
         
-        sys.exit()
-    assert not rawCard is None
-    assert not imageCard is None
-    if args['view']:
-            cv2.imshow("Reference", raw_)
-            cv2.imshow("Input", img1_)
-    # show the color matching card in the reference image and input image,
-    # respectively
-    if args['view']:
-        cv2.imshow("Reference Color Card", rawCard)
-        cv2.imshow("Input Color Card", imageCard)
+            print("[INFO] Finding color matching cards width "+ repr(newWidth)+"px")
+            rawCard = corrector.find_color_card(raw_)
+            imageCard = corrector.find_color_card(img1_)
+            
+            if rawCard is None or imageCard is None:
+                oldW =newWidth
+                newWidth +=countStep
+                print("[INFO] Could not find color with width "+ repr(oldW)+"px. Try width:"+ repr(newWidth)+"px")
+                continue
+            else:
+                goOn=True
+                break
+
+        if(goOn is False):
+            print("[WARNING] Could not find color matching cards in both images. Try a highter/better Resolution")
+            
+            sys.exit()
+        assert not rawCard is None
+        assert not imageCard is None
+        if args['view']:
+                cv2.imshow("Reference", raw_)
+                cv2.imshow("Input", img1_)
+        # show the color matching card in the reference image and input image,
+        # respectively
+        if args['view']:
+            cv2.imshow("Reference Color Card", rawCard)
+            cv2.imshow("Input Color Card", imageCard)
+        corrector.create_colormap(imageCard, rawCard)
     # apply histogram matching from the color matching card in the
     # reference image to the color matching card in the input image
     print("[INFO] matching images...")
 
-    if args["width0"]:
-        width=int(args["width0"])
-        if width>1:    
-            print('resize Final: '+repr(width))
-            img1 = imutils.resize(img1, width)
+    result2 : Optional[OurImageType] = None
 
-    result2 = corrector.full_process_images(imageCard, rawCard, img1)
+    if args["input"]:
+        if img1 is None:
+            img1 = cast(OurImageType, cv2.imread(args["input"]))
+        
+        if args["width0"]:
+            width=int(args["width0"])
+            if width>1:    
+                print('resize Final: '+repr(width))
+                img1 = cast(OurImageType, imutils.resize(img1, width))
 
-
-
+        result2 = corrector.map_image(img1)
 
     # show our input color matching card after histogram matching
     #cv2.imshow("Input Color Card After Matching", inputCard)
 
+    if args["savelut"]:
+        corrector.save_colormap(args["savelut"])
 
     if args['view']:
-        cv2.imshow("Output image", result2)
+        if not result2 is None:
+            cv2.imshow("Output image", result2)
 
     if args['output']:
+        assert not result2 is None
         file_ok = exists(args['output'].lower().endswith(('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif')))
 
         if file_ok:
@@ -321,10 +365,6 @@ def main():
 
     if args['view']:
         cv2.waitKey(0)
-
-    if not args['view']:
-        if not args['output']:
-            print('[EMPTY] You Need at least one Paramter "--view" or "--output".')
 
 if __name__ == "__main__":
     main()
