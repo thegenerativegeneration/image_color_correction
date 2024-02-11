@@ -11,7 +11,6 @@ Website: https://CouchBoss.de
 
 from typing import Optional, cast, List
 from imutils.perspective import four_point_transform
-from skimage import exposure
 import numpy as np
 from numpy.typing import NDArray
 import argparse
@@ -29,166 +28,171 @@ OurImageType1Channel = NDArray[np.uint8]
 OurColormap = List[NDArray[np.int32]]
 OurColormap1Channel = NDArray[np.int32]
 
-def find_color_card(image : OurImageType, debug : bool=False) -> Optional[OurImageType]:
-    """Find a color card in an image. Return another image, with only the color card, with perspective fixed"""
-    # load the ArUCo dictionary, grab the ArUCo parameters, and
-    # detect the markers in the input image
-    arucoDict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_ARUCO_ORIGINAL)
-    arucoParams = cv2.aruco.DetectorParameters()
-    detector = cv2.aruco.ArucoDetector(arucoDict, arucoParams)
-    (corners, ids, _) = detector.detectMarkers(image)
-    if debug:
-        outputImage = image.copy()
-        cv2.aruco.drawDetectedMarkers(outputImage, corners, ids)
-        winTitle = f"Markers."
-        cv2.imshow(winTitle, outputImage)
-        while True:
-            ch = cv2.waitKey()
-            if ch == 27:
-                break
-            print(f"ignoring key {ch}")
-        cv2.destroyWindow(winTitle)
-    # try to extract the coordinates of the color correction card
-    try:
-        # otherwise, we've found the four ArUco markers, so we can
-        # continue by flattening the ArUco IDs list
-        ids = ids.flatten()
+class ColorCorrector:
 
-        # extract the top-left marker
-        i = np.squeeze(np.where(ids == 923))
-        topLeft = np.squeeze(corners[i])[0]
+    def __init__(self):
+        pass
 
-        # extract the top-right marker
-        i = np.squeeze(np.where(ids == 1001))
-        topRight = np.squeeze(corners[i])[1]
+    def find_color_card(self, image : OurImageType, debug : bool=False) -> Optional[OurImageType]:
+        """Find a color card in an image. Return another image, with only the color card, with perspective fixed"""
+        # load the ArUCo dictionary, grab the ArUCo parameters, and
+        # detect the markers in the input image
+        arucoDict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_ARUCO_ORIGINAL)
+        arucoParams = cv2.aruco.DetectorParameters()
+        detector = cv2.aruco.ArucoDetector(arucoDict, arucoParams)
+        (corners, ids, _) = detector.detectMarkers(image)
+        if debug:
+            outputImage = image.copy()
+            cv2.aruco.drawDetectedMarkers(outputImage, corners, ids)
+            winTitle = f"Markers."
+            cv2.imshow(winTitle, outputImage)
+            while True:
+                ch = cv2.waitKey()
+                if ch == 27:
+                    break
+                print(f"ignoring key {ch}")
+            cv2.destroyWindow(winTitle)
+        # try to extract the coordinates of the color correction card
+        try:
+            # otherwise, we've found the four ArUco markers, so we can
+            # continue by flattening the ArUco IDs list
+            ids = ids.flatten()
 
-        # extract the bottom-right marker
-        i = np.squeeze(np.where(ids == 241))
-        bottomRight = np.squeeze(corners[i])[2]
+            # extract the top-left marker
+            i = np.squeeze(np.where(ids == 923))
+            topLeft = np.squeeze(corners[i])[0]
 
-        # extract the bottom-left marker
-        i = np.squeeze(np.where(ids == 1007))
-        bottomLeft = np.squeeze(corners[i])[3]
+            # extract the top-right marker
+            i = np.squeeze(np.where(ids == 1001))
+            topRight = np.squeeze(corners[i])[1]
 
-    # we could not find color correction card, so gracefully return
-    except:
-        return None
+            # extract the bottom-right marker
+            i = np.squeeze(np.where(ids == 241))
+            bottomRight = np.squeeze(corners[i])[2]
 
-    # build our list of reference points and apply a perspective
-    # transform to obtain a top-down, bird’s-eye view of the color
-    # matching card
-    cardCoords = np.array([topLeft, topRight,
-                           bottomRight, bottomLeft])
-    card = four_point_transform(image, cardCoords)
-    # return the color matching card to the calling function
-    return cast(OurImageType, card)
+            # extract the bottom-left marker
+            i = np.squeeze(np.where(ids == 1007))
+            bottomLeft = np.squeeze(corners[i])[3]
+
+        # we could not find color correction card, so gracefully return
+        except:
+            return None
+
+        # build our list of reference points and apply a perspective
+        # transform to obtain a top-down, bird’s-eye view of the color
+        # matching card
+        cardCoords = np.array([topLeft, topRight,
+                            bottomRight, bottomLeft])
+        card = four_point_transform(image, cardCoords)
+        # return the color matching card to the calling function
+        return cast(OurImageType, card)
 
 
-def _create_colormap_1channel(source : OurImageType1Channel, template : OurImageType1Channel) -> OurColormap1Channel:
-    """
-    Helper function: create single-channel colormap.
+    def _create_colormap_1channel(self, source : OurImageType1Channel, template : OurImageType1Channel) -> OurColormap1Channel:
+        """
+        Helper function: create single-channel colormap.
 
-    Return modified full image array so that the cumulative density function of
-    source array matches the cumulative density function of the template.
-    """
-    src_values, src_unique_indices, src_counts = np.unique(source.ravel(),
-                                                           return_inverse=True,
-                                                           return_counts=True)
-    tmpl_values, tmpl_counts = np.unique(template.ravel(), return_counts=True)
+        Return modified full image array so that the cumulative density function of
+        source array matches the cumulative density function of the template.
+        """
+        src_values, _, src_counts = np.unique(source.ravel(),
+                                                            return_inverse=True,
+                                                            return_counts=True)
+        tmpl_values, tmpl_counts = np.unique(template.ravel(), return_counts=True)
 
-    # calculate normalized quantiles for each array
-    src_quantiles = np.cumsum(src_counts) / source.size
-    tmpl_quantiles = np.cumsum(tmpl_counts) / template.size
+        # calculate normalized quantiles for each array
+        src_quantiles = np.cumsum(src_counts) / source.size
+        tmpl_quantiles = np.cumsum(tmpl_counts) / template.size
 
-    interp_a_values = np.interp(src_quantiles, tmpl_quantiles, tmpl_values)
+        interp_a_values = np.interp(src_quantiles, tmpl_quantiles, tmpl_values)
 
-    # Here we compute values which the channel RGB value of full image will be modified to.
-    colormap_1channel = np.ones(256, dtype=np.int32) * -1
-   
-    # first compute which values in src image transform to and mark those values.
-
-    for i in range(0, len(interp_a_values)):
-        frm = src_values[i]
-        to = interp_a_values[i]
-        colormap_1channel[frm] = to
-
-    # some of the pixel values might not be there in interp_a_values, interpolate those values using their
-    # previous and next neighbours
-    prev_value = -1
-    prev_index = -1
-    for i in range(0, 256):
-        if colormap_1channel[i] == -1:
-            next_index = -1
-            next_value = -1
-            for j in range(i + 1, 256):
-                if colormap_1channel[j] >= 0:
-                    next_value = colormap_1channel[j]
-                    next_index = j
-            if prev_index < 0:
-                colormap_1channel[i] = (i + 1) * next_value / (next_index + 1)
-            elif next_index < 0:
-                colormap_1channel[i] = prev_value + ((255 - prev_value) * (i - prev_index) / (255 - prev_index))
-            else:
-                colormap_1channel[i] = prev_value + (i - prev_index) * (next_value - prev_value) / (next_index - prev_index)
-        else:
-            prev_value = colormap_1channel[i]
-            prev_index = i
-    return colormap_1channel
-
-def create_colormap(source : OurImageType, template : OurImageType) -> OurColormap:
-    """Given a source image capture of a colorcard and a template for that colorcard return the colormap to correct the source image"""
-    rv = []
-    assert source.shape[-1] == template.shape[-1]
-    for channel in range(source.shape[-1]):
-        map = _create_colormap_1channel(source[..., channel], template[..., channel])
-        rv.append(map)
-    return rv
-
-def _map_image_color_1channel(full_1channel : OurImageType1Channel, colormap_1channel : OurColormap1Channel) -> OurImageType1Channel:
-    """Helper function: map color for a single channel"""
-    wid = full_1channel.shape[1]
-    hei = full_1channel.shape[0]
-    ret2 = np.zeros((hei, wid), dtype=np.uint8)
-    for i in range(0, hei):
-        for j in range(0, wid):
-            ret2[i][j] = colormap_1channel[full_1channel[i][j]]
-    return ret2
-
-def map_image_color(fullImage : OurImageType, colormap : OurColormap) -> OurImageType:
-    """Given a source image and a colormap return a new image that has the colors mapped"""
-    assert len(colormap) == fullImage.shape[-1]
-    matched = np.empty(fullImage.shape, dtype=fullImage.dtype)
-    for channel in range(len(colormap)):
-        matched_channel = _map_image_color_1channel(fullImage[..., channel], colormap[channel])
-        matched[..., channel] = matched_channel
-    return matched
+        # Here we compute values which the channel RGB value of full image will be modified to.
+        colormap_1channel = np.ones(256, dtype=np.int32) * -1
     
-def process_images(inputCard : OurImageType, referenceCard : OurImageType, fullImage : OurImageType, debug : bool = False) -> OurImageType:
-    """
-        Return modified full image, by using histogram equalizatin on input and
-         reference cards and applying that transformation on fullImage.
-    """
-    colormap = create_colormap(inputCard, referenceCard)
-    rv = map_image_color(fullImage, colormap)
-    if debug:
-        plot_colormap(colormap)
-    return rv
+        # first compute which values in src image transform to and mark those values.
 
-def plot_colormap(colormap : OurColormap) -> None:
-    ngraph = len(colormap)
-    fig, axis = plt.subplots(nrows=1, ncols=1, sharex=True, sharey=True)
-    colors = ['red', 'green', 'blue']
-    for i in range(ngraph):
-        data = colormap[i]
-        axis.plot(data, color=colors[i], label=colors[i])
-    axis.set_aspect(1)
-    axis.set_xticks(np.arange(0, 257, 32))
-    axis.set_yticks(np.arange(0, 257, 32))
-    axis.set_xlabel("Input")
-    axis.set_ylabel("Output")
-    axis.grid(linestyle='dotted')
-    fig.legend()
-    plt.show()
+        for i in range(0, len(interp_a_values)):
+            frm = src_values[i]
+            to = interp_a_values[i]
+            colormap_1channel[frm] = to
+
+        # some of the pixel values might not be there in interp_a_values, interpolate those values using their
+        # previous and next neighbours
+        prev_value = -1
+        prev_index = -1
+        for i in range(0, 256):
+            if colormap_1channel[i] == -1:
+                next_index = -1
+                next_value = -1
+                for j in range(i + 1, 256):
+                    if colormap_1channel[j] >= 0:
+                        next_value = colormap_1channel[j]
+                        next_index = j
+                if prev_index < 0:
+                    colormap_1channel[i] = (i + 1) * next_value / (next_index + 1)
+                elif next_index < 0:
+                    colormap_1channel[i] = prev_value + ((255 - prev_value) * (i - prev_index) / (255 - prev_index))
+                else:
+                    colormap_1channel[i] = prev_value + (i - prev_index) * (next_value - prev_value) / (next_index - prev_index)
+            else:
+                prev_value = colormap_1channel[i]
+                prev_index = i
+        return colormap_1channel
+
+    def create_colormap(self, source : OurImageType, template : OurImageType) -> OurColormap:
+        """Given a source image capture of a colorcard and a template for that colorcard return the colormap to correct the source image"""
+        rv : OurColormap = []
+        assert source.shape[-1] == template.shape[-1]
+        for channel in range(source.shape[-1]):
+            map = self._create_colormap_1channel(source[..., channel], template[..., channel])
+            rv.append(map)
+        return rv
+
+    def _map_image_color_1channel(self, full_1channel : OurImageType1Channel, colormap_1channel : OurColormap1Channel) -> OurImageType1Channel:
+        """Helper function: map color for a single channel"""
+        wid = full_1channel.shape[1]
+        hei = full_1channel.shape[0]
+        ret2 = np.zeros((hei, wid), dtype=np.uint8)
+        for i in range(0, hei):
+            for j in range(0, wid):
+                ret2[i][j] = colormap_1channel[full_1channel[i][j]]
+        return ret2
+
+    def map_image_color(self, fullImage : OurImageType, colormap : OurColormap) -> OurImageType:
+        """Given a source image and a colormap return a new image that has the colors mapped"""
+        assert len(colormap) == fullImage.shape[-1]
+        matched = np.empty(fullImage.shape, dtype=fullImage.dtype)
+        for channel in range(len(colormap)):
+            matched_channel = self._map_image_color_1channel(fullImage[..., channel], colormap[channel])
+            matched[..., channel] = matched_channel
+        return matched
+        
+    def process_images(self, inputCard : OurImageType, referenceCard : OurImageType, fullImage : OurImageType, debug : bool = False) -> OurImageType:
+        """
+            Return modified full image, by using histogram equalizatin on input and
+            reference cards and applying that transformation on fullImage.
+        """
+        colormap = self.create_colormap(inputCard, referenceCard)
+        rv = self.map_image_color(fullImage, colormap)
+        if debug:
+            self.plot_colormap(colormap)
+        return rv
+
+    def plot_colormap(self, colormap : OurColormap) -> None:
+        ngraph = len(colormap)
+        fig, axis = plt.subplots(nrows=1, ncols=1, sharex=True, sharey=True)
+        colors = ['red', 'green', 'blue']
+        for i in range(ngraph):
+            data = colormap[i]
+            axis.plot(data, color=colors[i], label=colors[i])
+        axis.set_aspect(1)
+        axis.set_xticks(np.arange(0, 257, 32))
+        axis.set_yticks(np.arange(0, 257, 32))
+        axis.set_xlabel("Input")
+        axis.set_ylabel("Output")
+        axis.grid(linestyle='dotted')
+        fig.legend()
+        plt.show()
 
 
 def main():
@@ -206,6 +210,8 @@ def main():
                     help="path to the input image to apply color correction to")
     ap.add_argument("-d", "--debug", action="store_true", help="Debug card finder")
     args = vars(ap.parse_args())
+
+    corrector = ColorCorrector()
 
     # load the reference image and input images from disk
     print("[INFO] loading images...")
@@ -233,8 +239,8 @@ def main():
     # First try without resizing
     raw_ = raw
     img1_ = img1
-    rawCard = find_color_card(raw_, args["debug"])
-    imageCard = find_color_card(img1_, args["debug"])
+    rawCard = corrector.find_color_card(raw_, args["debug"])
+    imageCard = corrector.find_color_card(img1_, args["debug"])
     if not rawCard is None and not imageCard is None:
         goOn = True
 
@@ -245,8 +251,8 @@ def main():
 
     
         print("[INFO] Finding color matching cards width "+ repr(newWidth)+"px")
-        rawCard = find_color_card(raw_, args["debug"])
-        imageCard = find_color_card(img1_, args["debug"])
+        rawCard = corrector.find_color_card(raw_, args["debug"])
+        imageCard = corrector.find_color_card(img1_, args["debug"])
         
         if rawCard is None or imageCard is None:
             oldW =newWidth
@@ -275,16 +281,13 @@ def main():
     # reference image to the color matching card in the input image
     print("[INFO] matching images...")
 
-    # imageCard2 = exposure.match_histograms(img1, ref,
-    # inputCard = exposure.match_histograms(inputCard, referenceCard, multichannel=True)
-
     if args["width0"]:
         width=int(args["width0"])
         if width>1:    
             print('resize Final: '+repr(width))
             img1 = imutils.resize(img1, width)
 
-    result2 = process_images(imageCard, rawCard, img1, args["debug"])
+    result2 = corrector.process_images(imageCard, rawCard, img1, args["debug"])
 
 
 
