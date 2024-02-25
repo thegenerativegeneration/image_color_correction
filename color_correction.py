@@ -92,13 +92,13 @@ class ColorCorrector:
         """Find an aruco marker in an image. Return another image, with only the aruco marker, with perspective fixed"""
         # load the ArUCo dictionary, grab the ArUCo parameters, and
         # detect the markers in the input image
-        arucoDict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_ARUCO_ORIGINAL)
+        arucoDict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_50)
         arucoParams = cv2.aruco.DetectorParameters()
         detector = cv2.aruco.ArucoDetector(arucoDict, arucoParams)
-        (corners, ids, _) = detector.detectMarkers(image)
+        (marker_areas, marker_ids, _) = detector.detectMarkers(image)
         if self.debug:
             outputImage = image.copy()
-            cv2.aruco.drawDetectedMarkers(outputImage, corners, ids)
+            cv2.aruco.drawDetectedMarkers(outputImage, marker_areas, marker_ids)
             winTitle = f"Markers."
             cv2.imshow(winTitle, outputImage)
             while True:
@@ -109,10 +109,14 @@ class ColorCorrector:
             cv2.destroyWindow(winTitle)
         # try to extract the coordinates of the color correction card
         i = 0
-        topLeft = corners[i][0]
-        topRight = corners[i][1]
-        bottomRight = corners[i][2]
-        bottomLeft = corners[i][3]
+        area = marker_areas[i]
+        # I don't understand what detectMarkers returns. There seems to be an extra first dimension
+        if area.shape[0] != 4:
+            area = area[0]
+        topLeft = area[0]
+        topRight = area[1]
+        bottomRight = area[2]
+        bottomLeft = area[3]
 
         # build our list of reference points and apply a perspective
         # transform to obtain a top-down, bird’s-eye view of the color
