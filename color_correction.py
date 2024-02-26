@@ -9,7 +9,7 @@ Website: https://CouchBoss.de
 """
 
 
-from typing import Optional, cast, List
+from typing import Optional, cast, List, Any
 from imutils.perspective import four_point_transform
 import numpy as np
 from numpy.typing import NDArray
@@ -88,6 +88,15 @@ class ColorCorrector:
         # return the color matching card to the calling function
         return cast(OurImageType, card)
 
+    def _extend_marker_area(self, area : NDArray[Any]) -> None:
+        FACTOR = 2
+        assert area.shape == (4, 2)
+        center = np.sum(area, axis=0) / 4
+        for i in range(4):
+            delta = area[i] - center
+            area[i] = center - delta * FACTOR
+        pass
+
     def find_raw_aruco(self, image : OurImageType) -> Optional[OurImageType]:
         """Find an aruco marker in an image. Return another image, with only the aruco marker, with perspective fixed"""
         # load the ArUCo dictionary, grab the ArUCo parameters, and
@@ -96,9 +105,12 @@ class ColorCorrector:
         arucoParams = cv2.aruco.DetectorParameters()
         detector = cv2.aruco.ArucoDetector(arucoDict, arucoParams)
         (marker_areas, marker_ids, _) = detector.detectMarkers(image)
+        i = 0
+        self._extend_marker_area(marker_areas[i][0])
         if self.debug:
             outputImage = image.copy()
             cv2.aruco.drawDetectedMarkers(outputImage, marker_areas, marker_ids)
+
             winTitle = f"Markers."
             cv2.imshow(winTitle, outputImage)
             while True:
@@ -108,7 +120,6 @@ class ColorCorrector:
                 print(f"ignoring key {ch}")
             cv2.destroyWindow(winTitle)
         # try to extract the coordinates of the color correction card
-        i = 0
         area = marker_areas[i]
         # I don't understand what detectMarkers returns. There seems to be an extra first dimension
         if area.shape[0] != 4:
