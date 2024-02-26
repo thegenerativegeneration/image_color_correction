@@ -105,6 +105,8 @@ class ColorCorrector:
         arucoParams = cv2.aruco.DetectorParameters()
         detector = cv2.aruco.ArucoDetector(arucoDict, arucoParams)
         (marker_areas, marker_ids, _) = detector.detectMarkers(image)
+        if not marker_areas or marker_ids is None:
+            return None
         i = 0
         self._extend_marker_area(marker_areas[i][0])
         if self.debug:
@@ -303,8 +305,6 @@ def main():
     ap.add_argument("-r", "--reference", required=False,
                     help="path to the input reference image")
     ap.add_argument("--loadlut", metavar="FILE", help="Don't search for colorcards, load a .cube FILE for colormapping")
-    ap.add_argument("-w", "--width0", required=False,
-                    help="Image Size")
     ap.add_argument("-v", "--view", required=False, default=False, action='store_true',
                     help="Image Preview?")
     ap.add_argument("-o", "--output", required=False, default=False,
@@ -312,85 +312,93 @@ def main():
     ap.add_argument("--savelut", metavar="FILE", help="Save the colormapping to FILE in .cube format")
     ap.add_argument("-d", "--debug", action="store_true", help="Debug card finder")
     ap.add_argument("--raw_aruco", action="store_true", help="Don't search for a colorcard, search for a raw aruco marker")
-    ap.add_argument("input",
+    ap.add_argument("input", nargs="+",
                     help="path to the input image to apply color correction to")
   
     args = ap.parse_args()
 
-    current_input = args.input
-    input_filename = os.path.split(current_input)[1]
+    for current_input in args.input:
+        input_filename = os.path.split(current_input)[1]
 
-    corrector = ColorCorrector(debug=args.debug)
+        corrector = ColorCorrector(debug=args.debug)
 
-    input_image : Optional[OurImageType] = None
-    # load the reference image and input images from disk
+        input_image : Optional[OurImageType] = None
+        # load the reference image and input images from disk
 
-    if args.loadlut:
-        corrector.load_colormap(args.loadlut)
-    elif args.reference:
-        reference_image = cast(OurImageType, cv2.imread(args.reference))
-        
-        if args.raw_aruco:
-            reference_cardonly = corrector.find_raw_aruco(reference_image, "Reference image")
+        if args.loadlut:
+            corrector.load_colormap(args.loadlut)
+        elif args.reference:
+            reference_image = cast(OurImageType, cv2.imread(args.reference))
+            
+            if args.raw_aruco:
+                reference_cardonly = corrector.find_raw_aruco(reference_image, "Reference image")
+            else:
+                reference_cardonly = corrector.find_color_card(reference_image, "Reference image")
+            if reference_cardonly is None:
+                print(f"[ERROR] Could not find color matching card in reference image {args.reference}")
+                sys.exit(1)
         else:
-            reference_cardonly = corrector.find_color_card(reference_image, "Reference image")
-        if reference_cardonly is None:
-            print(f"[ERROR] Could not find color matching card in reference image {args.reference}")
+            print("Must specify either --loadlut or --reference")
             sys.exit(1)
-    else:
-        print("Must specify either --loadlut or --reference")
-        sys.exit(1)
-    
-    input_image = cast(OurImageType, cv2.imread(current_input))
+        
+        input_image = cast(OurImageType, cv2.imread(current_input))
+        if input_image is None:
+            print("Error: cannot read image {current_input}")
+            sys.exit(1)
+        if args.raw_aruco:
+            input_cardonly = corrector.find_raw_aruco(input_image, "Input image")
+        else:
+            input_cardonly = corrector.find_color_card(input_image, "Input image")
+        if input_cardonly is None:
+            print(f"[ERROR] Could not find color matching card in image {args.reference}")
+            sys.exit(1)
+        assert not reference_cardonly is None
+        assert not input_cardonly is None
+        if False and args.view:
+                cv2.imshow("Reference", reference_image)
+                cv2.imshow("Input", input_image)
+        # show the color matching card in the reference image and input image,
+        # respectively
+        if False and args.view:
+            cv2.imshow("Reference Color Card", reference_cardonly)
+            cv2.imshow("Input Color Card", input_cardonly)
 
-    if args.raw_aruco:
-        input_cardonly = corrector.find_raw_aruco(input_image, "Input image")
-    else:
-        input_cardonly = corrector.find_color_card(input_image, "Input image")
-    if input_cardonly is None:
-        print(f"[ERROR] Could not find color matching card in image {args.reference}")
-        sys.exit(1)
-    assert not reference_cardonly is None
-    assert not input_cardonly is None
-    if False and args.view:
-            cv2.imshow("Reference", reference_image)
-            cv2.imshow("Input", input_image)
-    # show the color matching card in the reference image and input image,
-    # respectively
-    if False and args.view:
-        cv2.imshow("Reference Color Card", reference_cardonly)
-        cv2.imshow("Input Color Card", input_cardonly)
+        corrector.create_colormap(input_cardonly, reference_cardonly)
+        
+        input_image_mapped : Optional[OurImageType] = None
 
-    corrector.create_colormap(input_cardonly, reference_cardonly)
-    
-    input_image_mapped : Optional[OurImageType] = None
+        input_image_mapped = corrector.map_image(input_image)
 
-    input_image_mapped = corrector.map_image(input_image)
+        # show our input color matching card after histogram matching
+        #cv2.imshow("Input Color Card After Matching", inputCard)
 
-    # show our input color matching card after histogram matching
-    #cv2.imshow("Input Color Card After Matching", inputCard)
+        print(f"colormap magnitude: {corrector.colormap_magnitude(corrector.colormap)}")
 
-    print(f"colormap magnitude: {corrector.colormap_magnitude(corrector.colormap)}")
+        if args.savelut:
+            lut_filename = args.savelut
+            if lut_filename[0] == ".":
+                output_pathname = args.output
+                if os.path.isdir(output_pathname):
+                    output_pathname = os.path.join(output_pathname, input_filename)
+                    lut_filename = output_pathname + lut_filename
+            corrector.save_colormap(lut_filename)
 
-    if args.savelut:
-        corrector.save_colormap(args.savelut)
+        if args.view:
+            if not input_image_mapped is None:
+                cv2.imshow("Output image", input_image_mapped)
 
-    if args.view:
-        if not input_image_mapped is None:
-            cv2.imshow("Output image", input_image_mapped)
+        if args.output:
+            assert not input_image_mapped is None
+            output_pathname = args.output
+            if os.path.isdir(output_pathname):
+                output_pathname = os.path.join(output_pathname, input_filename)
 
-    if args.output:
-        assert not input_image_mapped is None
-        output_pathname = args.output
-        if os.path.isdir(output_pathname):
-            output_pathname = os.path.join(output_pathname, input_filename)
+            ok = cv2.imwrite(output_pathname, input_image_mapped)
+            if not ok:
+                print(f"[ERROR] Could not write resulting image to {output_pathname}")
 
-        ok = cv2.imwrite(output_pathname, input_image_mapped)
-        if not ok:
-            print(f"[ERROR] Could not write resulting image to {output_pathname}")
-
-    if args.view:
-        cv2.waitKey(0)
+        if args.view:
+            cv2.waitKey(0)
 
 if __name__ == "__main__":
     main()
