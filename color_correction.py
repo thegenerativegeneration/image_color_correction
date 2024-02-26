@@ -222,6 +222,17 @@ class ColorCorrector:
                 colormap_b[i] = int(b)
             self.colormap = [colormap_r, colormap_g, colormap_b]
 
+    def colormap_magnitude(self, colormap : OurColormap) -> float:
+        """Return a number that indicates how much the colormap differs from the unit map"""
+        rv = 0
+        unit = np.array(range(256))
+        for channel_colormap in colormap:
+            unit[0] = 0
+            delta = np.abs(unit - channel_colormap)
+            unit[0] = 1
+            rv += np.sum(delta / unit) / 256
+        return rv
+    
     def save_colormap(self, filename : str) -> None:
         """Save the colormap to a .cube file"""
         assert not self.colormap is None
@@ -401,6 +412,7 @@ def main():
     # show our input color matching card after histogram matching
     #cv2.imshow("Input Color Card After Matching", inputCard)
 
+    print(f"colormap magnitude: {corrector.colormap_magnitude(corrector.colormap)}")
     if args["savelut"]:
         corrector.save_colormap(args["savelut"])
 
