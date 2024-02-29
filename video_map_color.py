@@ -1,4 +1,5 @@
 import cv2
+import cv2.videoio_registry
 import sys
 import argparse
 import color_correction
@@ -12,12 +13,17 @@ def main():
     parser.add_argument("input", help="Input video file")
     args = parser.parse_args()
 
+    if False:
+        backends = cv2.videoio_registry.getBackends()
+        for backend in backends:
+            name = cv2.videoio_registry.getBackendName(backend)
+            print(f"xxxjack backend {backend} name {name}")
     corrector = None
     if args.lutfile:
         corrector = color_correction.ColorCorrector()
         corrector.load_colormap(args.lutfile)
 
-    input_file = cv2.VideoCapture(args.input)
+    input_file = cv2.VideoCapture(args.input, cv2.CAP_FFMPEG)
     if not input_file.isOpened():
         print(f"{sys.argv[0]}: {args.input}: Failed to open input video file")
         sys.exit(1)
@@ -28,10 +34,10 @@ def main():
     height = int(input_file.get(cv2.CAP_PROP_FRAME_HEIGHT))
     print(f"{args.input}: {width} * {height} @ {fps} fps, 4CC=0x{fourcc:08x}")
     if args.output:
-        output_file = cv2.VideoWriter(args.output, fourcc, fps, (height, width))
-    if not output_file.isOpened():
-        print(f"{sys.argv[0]}: {args.output}: Failed to open output video file")
-        sys.exit(1)
+        output_file = cv2.VideoWriter(args.output, fourcc, fps, (width, height))
+        if not output_file.isOpened():
+            print(f"{sys.argv[0]}: {args.output}: Failed to open output video file")
+            sys.exit(1)
     framenum = 0
     while True:
         if args.count and framenum >= args.count:
@@ -49,6 +55,10 @@ def main():
         framenum += 1
         print(f"xxxjack did image {framenum}")
     print(f"{sys.argv[0]}: processed {framenum} frames")
+    if input_file:
+        input_file.release()
+    if output_file:
+        output_file.release()
 
 if __name__ == "__main__":
     main()
