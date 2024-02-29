@@ -253,10 +253,15 @@ class ColorCorrector:
         """Helper function: map color for a single channel"""
         wid = full_1channel.shape[1]
         hei = full_1channel.shape[0]
-        ret2 = np.zeros((hei, wid), dtype=np.uint8)
-        for i in range(0, hei):
-            for j in range(0, wid):
-                ret2[i][j] = colormap_1channel[full_1channel[i][j]]
+        # The joys of numpy: you can lookup each entry in the source image
+        # in the lookup table by simply using it as an index expression...
+
+        ret2 = colormap_1channel[full_1channel]
+        if False:
+            ret2 = np.zeros((hei, wid), dtype=np.uint8)
+            for i in range(0, hei):
+                for j in range(0, wid):
+                    ret2[i][j] = colormap_1channel[full_1channel[i][j]]
         return ret2
 
     def map_image(self, fullImage : OurImageType) -> OurImageType:
