@@ -3,6 +3,11 @@
 
 This repository contains tools to color-correct images and videos. The main tool is `color_correction.py`.
 
+> A word of warning: the command line interface of the tools leave something to be desired.
+>
+> Another word of warning: the color mapping does not take the gamma curves of the captured images or videos into account (yet).
+> So for images or videos with `gamma != 1` results will not be correct, and the more the luminance has to be changed to worse the results will be.
+
 Start by creating a Python venv and installing the needed packages:
 
 ```
