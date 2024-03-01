@@ -1,4 +1,47 @@
-# White-Balance with Color Cards 
+
+# Color correcting images and videos
+
+This repository contains tools to color-correct images and videos. The main tool is `color_correction.py`.
+
+Start by creating a Python venv and installing the needed packages:
+
+```
+python -m venv .venv
+. .venv/bin/activate # Mac/Linux
+&.venv\scripts\activate.ps1 # Windows powershell
+pip install -r requirements.txt
+```
+
+## Usage with reference color card
+
+If you have a specific type of reference color card, and you have captured that card as part of your recording: life is easy. (See below for the specific card). You pass a known correct version of the reference color card as `--ref` option. You pass your input image as a positional parameter. The script will find the reference card in the input image and adjust the colors of the _whole input image_ so that the colors of the reference card match the correct reference card.
+
+You can use `--output` to save the resulting image and `--view` to view it. You can also use `--savelut` to save the lookup table for re-use, for example on other images or videos. The LUT is saved in `.cube` format.
+
+## Usage without reference color card
+
+If:
+
+- you haven't captured a reference color card, and
+- you have captured a specific type of Aruco marker, and
+- you have captures from multiple different cameras, and
+- you are primarily interested in ensuring all cameras "look the same"
+
+this can be done too. Basically by selecting the "best looking" of the captures and using that as the reference. A workflow is explained in [sample_usage.md](sample_usage.md).
+
+## Converting more images and videos
+
+After saving the LUT in the previous step you can convert more images, which need not contain a captured reference card (because you have the LUT already).
+
+Use the `--loadlut` option in stead of the `--ref` option.
+
+Converting videos can be done with the `video_map_color.py` script. 
+
+## Original README file
+
+Here is the original readme file, there is a lot of useful information in here but also a lot of things that are no longer true.
+
+## White-Balance with Color Cards 
 A python function to correct image White-Balance using Color Cards, detecting with [CV2 Aruco](https://docs.opencv.org/4.x/d5/dae/tutorial_aruco_detection.html).
 Base Idea: https://pyimagesearch.com/2021/02/15/automatic-color-correction-with-opencv-and-python/
 
