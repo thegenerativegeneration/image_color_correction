@@ -3,6 +3,8 @@
 
 This repository contains tools to color-correct images and videos. The main tool is `color_correction.py`.
 
+This repository started life as a fork of <https://github.com/dazzafact/image_color_correction>, where the main algorithms come from. Just packaged differently for different use cases.
+
 > A word of warning: the command line interface of the tools leave something to be desired.
 >
 > Another word of warning: the color mapping does not take the gamma curves of the captured images or videos into account (yet).
@@ -44,7 +46,7 @@ Converting videos can be done with the `video_map_color.py` script.
 
 ## Original README file
 
-Here is the original readme file, there is a lot of useful information in here but also a lot of things that are no longer true.
+Here is the original readme file from <https://github.com/dazzafact/image_color_correction>, there is a lot of useful information in here but also a lot of things that are no longer true.
 
 ## White-Balance with Color Cards 
 A python function to correct image White-Balance using Color Cards, detecting with [CV2 Aruco](https://docs.opencv.org/4.x/d5/dae/tutorial_aruco_detection.html).
