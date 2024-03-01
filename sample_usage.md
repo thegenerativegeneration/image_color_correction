@@ -52,5 +52,7 @@ If you don't like the results: remove everything in `luts`, go back two steps, s
 Now convert each video. Note that this will lose the Depth and Infrared channels, if used like this.
 
 ```
-to be provided
+python video_map_color.py --lut testdata/luts/iti-nuc-04.png.cube --output testdata/output/iti-nuc-04_0_0119-1137.mkv testdata/recording/iti-nuc-04_0_0119-1137.mkv
 ```
+
+After running this command (with the right parameters) on each video your `testdata/output` folder shoud have all videos color-corrected.
