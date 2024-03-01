@@ -1,3 +1,4 @@
 .venv
 .vscode
 testdata
+__pycache__
