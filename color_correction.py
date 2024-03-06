@@ -235,17 +235,18 @@ class ColorCorrector:
             rv += np.sum(delta / unit) / 256
         return rv
     
+    
     def save_colormap(self, filename : str) -> None:
         """Save the colormap to a .cube file"""
-        assert not self.colormap is None
+        assert self.colormap is not None
         # .cube file format gotten from https://resolve.cafe/developers/luts/
         with open(filename, "w") as fp:
             fp.write('LUT_1D_SIZE 256\n')
-            fp.write('LUT_1D_INPUT_RANGE 0 255\n')
+            fp.write('LUT_1D_INPUT_RANGE 0 1.0\n')
             for i in range(256):
-                r = self.colormap[0][i]
-                g = self.colormap[1][i]
-                b = self.colormap[2][i]
+                r = self.colormap[0][i] / 255
+                g = self.colormap[1][i] / 255
+                b = self.colormap[2][i] / 255
                 fp.write(f"{r} {g} {b}\n")
 
 
