@@ -14,13 +14,9 @@ from imutils.perspective import four_point_transform
 import numpy as np
 from numpy.typing import NDArray
 import argparse
-import imutils
 import cv2
 import cv2.typing
 import sys
-from os.path import exists
-import os.path as pathfile
-from PIL import Image
 import matplotlib.pyplot as plt
 
 OurImageType = NDArray[np.uint8]
@@ -28,11 +24,53 @@ OurImageType1Channel = NDArray[np.uint8]
 OurColormap = List[NDArray[np.int32]]
 OurColormap1Channel = NDArray[np.int32]
 
+chartTypeMap = {
+    "MCC24": cv2.mcc.MCC24,
+    "SG140": cv2.mcc.SG140,
+    "VINYL18": cv2.mcc.VINYL18
+}
+
 class ColorCorrector:
 
     def __init__(self, *, debug : bool = False):
         self.debug = debug
         self.colormap : Optional[OurColormap] = None
+
+    def find_color_checker(self, image : OurImageType, chartType : str = "MCC24", label="ColorChecker") -> Optional[OurImageType]:
+        colorCheckerDetector = cv2.mcc.CCheckerDetector_create()
+        chartType = chartTypeMap[chartType]
+
+        # Detect the color checker
+        colorCheckerDetector.process(image, chartType=chartType, useNet=True)
+        cc = colorCheckerDetector.getBestColorChecker()
+        if cc is None:
+            return None
+        
+        box = cc.getBox()
+        topLeft = box[0]
+        topRight = box[1]
+        bottomRight = box[2]
+        bottomLeft = box[3]
+
+        cardCoords = np.array([topLeft, topRight,
+                            bottomRight, bottomLeft])
+        
+        card = four_point_transform(image, cardCoords)
+
+        if self.debug:
+            outputImage = image.copy()
+            print(f"topLeft: {topLeft}, topRight: {topRight}, bottomRight: {bottomRight}, bottomLeft: {bottomLeft}")
+            cv2.polylines(outputImage, [np.int32(cardCoords)], True, (0, 255, 0), 2)
+
+            cv2.imshow(label, outputImage)
+            while True:
+                ch = cv2.waitKey()
+                if ch == 27:
+                    break
+                print(f"ignoring key {ch}")
+            cv2.destroyWindow(label)
+
+        return cast(OurImageType, card)
 
     def find_color_card(self, image : OurImageType, label="Markers") -> Optional[OurImageType]:
         """Find a color card in an image. Return another image, with only the color card, with perspective fixed"""
@@ -318,6 +356,8 @@ def main():
     ap.add_argument("--savelut", metavar="FILE", help="Save the colormapping to FILE in .cube format")
     ap.add_argument("-d", "--debug", action="store_true", help="Debug card finder")
     ap.add_argument("--raw_aruco", action="store_true", help="Don't search for a colorcard, search for a raw aruco marker")
+    ap.add_argument("--colorchecker", help="Don't search for a colorcard, search for a colorchecker", choices=chartTypeMap.keys(),
+                    default=None)
     ap.add_argument("input", nargs="+",
                     help="path to the input image to apply color correction to")
   
@@ -338,8 +378,11 @@ def main():
             
             if args.raw_aruco:
                 reference_cardonly = corrector.find_raw_aruco(reference_image, "Reference image")
+            elif args.colorchecker:
+                reference_cardonly = corrector.find_color_checker(reference_image, args.colorchecker)
             else:
                 reference_cardonly = corrector.find_color_card(reference_image, "Reference image")
+
             if reference_cardonly is None:
                 print(f"[ERROR] Could not find color matching card in reference image {args.reference}")
                 sys.exit(1)
@@ -349,12 +392,15 @@ def main():
         
         input_image = cast(OurImageType, cv2.imread(current_input))
         if input_image is None:
-            print("Error: cannot read image {current_input}")
+            print(f"Error: cannot read image {current_input}")
             sys.exit(1)
         if args.raw_aruco:
             input_cardonly = corrector.find_raw_aruco(input_image, "Input image")
+        elif args.colorchecker:
+            input_cardonly = corrector.find_color_checker(input_image, args.colorchecker)
         else:
             input_cardonly = corrector.find_color_card(input_image, "Input image")
+
         if input_cardonly is None:
             print(f"[ERROR] Could not find color matching card in image {args.reference}")
             sys.exit(1)
